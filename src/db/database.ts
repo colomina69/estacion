@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 import { DB_NAME } from '../config/defaults';
+import { summarizeRainReadings, type RainStats } from '../lib/rain';
 import type { HistoryPoint, HistoryRange, Reading } from '../types/weather';
 
 interface ReadingRow {
@@ -227,6 +228,18 @@ export async function getHistorySeries(range: HistoryRange): Promise<HistoryPoin
     uvi: row.uvi,
     lightLux: row.light_lux,
   }));
+}
+
+export async function getRainStats(sinceMs: number): Promise<RainStats> {
+  const db = await initDatabase();
+  const rows = await db.getAllAsync<{ t: number; mm: number | null }>(
+    `SELECT received_at AS t, rain_delta_mm AS mm
+     FROM readings
+     WHERE received_at >= ? AND rain_delta_mm IS NOT NULL
+     ORDER BY received_at ASC`,
+    sinceMs,
+  );
+  return summarizeRainReadings(rows);
 }
 
 export async function purgeOldReadings(retentionDays: number): Promise<void> {

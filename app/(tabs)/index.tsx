@@ -15,6 +15,7 @@ import { formatClock, formatDateTime, formatRelative } from '../../src/lib/time'
 import {
   formatNumber,
   formatRain,
+  formatRainRate,
   formatTemperature,
   formatWind,
 } from '../../src/lib/units';
@@ -64,6 +65,8 @@ export default function DashboardScreen() {
   const lastMessageAt = useWeatherStore((state) => state.lastMessageAt);
   const receivedCount = useWeatherStore((state) => state.receivedCount);
   const discardedCount = useWeatherStore((state) => state.discardedCount);
+  const rainTodayMm = useWeatherStore((state) => state.rainTodayMm);
+  const rainMaxRateMmH = useWeatherStore((state) => state.rainMaxRateMmH);
   const settings = useSettingsStore((state) => state.settings);
   const now = useNow();
   const [refreshing, setRefreshing] = useState(false);
@@ -248,10 +251,27 @@ export default function DashboardScreen() {
           <View style={styles.row}>
             <MetricCard
               icon="rainy-outline"
-              label="Lluvia"
-              value={formatRain(latest.rainMm, units)}
-              subtitle={`+${formatRain(latest.rainDeltaMm, units)} última lectura`}
+              label="Lluvia hoy"
+              value={formatRain(rainTodayMm, units, 2)}
+              subtitle="Desde las 00:00"
               accent="#2563EB"
+            />
+            <MetricCard
+              icon="speedometer-outline"
+              label="Intensidad máx."
+              value={formatRainRate(rainMaxRateMmH, units)}
+              subtitle="Máx. entre lecturas"
+              accent="#1D4ED8"
+            />
+          </View>
+
+          <View style={styles.row}>
+            <MetricCard
+              icon="water-outline"
+              label="Lluvia total"
+              value={formatRain(latest.rainMm, units)}
+              subtitle="Acumulado de la estación"
+              accent="#0EA5E9"
             />
             <MetricCard
               icon="sunny-outline"

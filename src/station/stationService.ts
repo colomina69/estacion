@@ -2,6 +2,7 @@ import { evaluateOfflineAlert, evaluateReadingAlerts } from '../alerts/evaluate'
 import { setupNotifications } from '../alerts/notifications';
 import {
   getLatestReading,
+  getRainStats,
   initDatabase,
   insertReading,
   purgeOldReadings,
@@ -19,6 +20,8 @@ class StationService {
   private started = false;
   private monitor: ReturnType<typeof setInterval> | null = null;
   private lastOfflineCheck = 0;
+  private rainStatsInFlight = false;
+  private rainStatsQueued = false;
 
   async start(): Promise<void> {
     if (this.started) return;
@@ -99,11 +102,19 @@ class StationService {
   }
 
   private connect(settings: Settings): void {
-    const previousLatest = useWeatherStore.getState().latest;
+    const previous = useWeatherStore.getState();
+    const previousLatest = previous.latest;
+    const previousRainTodayMm = previous.rainTodayMm;
+    const previousRainMaxRateMmH = previous.rainMaxRateMmH;
     useWeatherStore.getState().reset();
     if (previousLatest) {
       useWeatherStore.getState().setLatest(previousLatest);
     }
+    useWeatherStore.getState().setRainStats({
+      totalMm: previousRainTodayMm,
+      maxRateMmH: previousRainMaxRateMmH,
+    });
+    void this.refreshRainStats();
 
     this.client.setHandlers({
       onState: (state, detail) => {
@@ -153,6 +164,7 @@ class StationService {
 
     try {
       await insertReading(reading);
+      void this.refreshRainStats();
     } catch (error) {
       console.warn('No se pudo guardar la lectura', error);
     }
@@ -161,6 +173,28 @@ class StationService {
       await evaluateReadingAlerts(reading, settings);
     } catch (error) {
       console.warn('No se pudieron evaluar las alertas', error);
+    }
+  }
+
+  private async refreshRainStats(): Promise<void> {
+    if (this.rainStatsInFlight) {
+      this.rainStatsQueued = true;
+      return;
+    }
+    this.rainStatsInFlight = true;
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const stats = await getRainStats(startOfDay.getTime());
+      useWeatherStore.getState().setRainStats(stats);
+    } catch (error) {
+      console.warn('No se pudieron calcular las estadísticas de lluvia', error);
+    } finally {
+      this.rainStatsInFlight = false;
+      if (this.rainStatsQueued) {
+        this.rainStatsQueued = false;
+        void this.refreshRainStats();
+      }
     }
   }
 

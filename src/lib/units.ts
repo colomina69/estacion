@@ -27,6 +27,10 @@ export function rainUnit(units: UnitSystem): string {
   return units === 'imperial' ? 'in' : 'mm';
 }
 
+export function rainRateUnit(units: UnitSystem): string {
+  return `${rainUnit(units)}/h`;
+}
+
 export function formatNumber(
   value: number | null,
   digits = 1,
@@ -56,4 +60,14 @@ export function formatRain(valueMm: number | null, units: UnitSystem, digits = 1
   const value = convertRain(valueMm, units);
   if (value === null) return '—';
   return `${value.toFixed(digits)} ${rainUnit(units)}`;
+}
+
+export function formatRainRate(
+  valueMmH: number | null,
+  units: UnitSystem,
+  digits = 1,
+): string {
+  const value = convertRain(valueMmH, units);
+  if (value === null) return '—';
+  return `${value.toFixed(digits)} ${rainRateUnit(units)}`;
 }

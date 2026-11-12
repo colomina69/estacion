@@ -8,7 +8,7 @@ Dashboard en vivo, histórico local con gráficas y alertas por umbral. Usa **MQ
 
 - Conexión MQTT 3.1.1 por WebSocket seguro (WSS) o TCP, con autenticación y reconexión exponencial.
 - Suscripción a `rtl_433/chuwi/events` y parseo tolerante del payload.
-- Dashboard con temperatura, sensación térmica, humedad, punto de rocío, viento, brújula, lluvia, UV, luminosidad y batería.
+- Dashboard con temperatura, sensación térmica, humedad, punto de rocío, viento, brújula, lluvia de hoy, intensidad máxima, lluvia acumulada, UV, luminosidad y batería.
 - Estado de conexión, última actualización y aviso de dato obsoleto.
 - Histórico en SQLite con gráficas de 1 h, 24 h y 7 días.
 - Alertas locales configurables: viento, lluvia, temperatura, UV, batería y pérdida de datos.

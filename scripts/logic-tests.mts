@@ -9,11 +9,13 @@ import {
   uvCategory,
   windChillC,
 } from '../src/lib/derived.ts';
+import { summarizeRainReadings } from '../src/lib/rain.ts';
 import {
   convertRain,
   convertTemperature,
   convertWind,
   formatRain,
+  formatRainRate,
   formatTemperature,
   formatWind,
 } from '../src/lib/units.ts';
@@ -100,5 +102,30 @@ assert.ok(Math.abs((convertRain(25.4, 'imperial') ?? 0) - 1) < 0.0001);
 assert.equal(formatTemperature(21.3, 'metric'), '21.3°C');
 assert.equal(formatWind(2.4, 'metric'), '2.4 km/h');
 assert.equal(formatRain(25.4, 'imperial'), '1.0 in');
+assert.equal(formatRainRate(12.4, 'metric'), '12.4 mm/h');
+assert.equal(formatRainRate(25.4, 'imperial'), '1.0 in/h');
+
+const emptyRain = summarizeRainReadings([]);
+assert.equal(emptyRain.totalMm, 0);
+assert.equal(emptyRain.maxRateMmH, null);
+
+const rainReadings = summarizeRainReadings([
+  { t: 0, mm: 0.2 },
+  { t: 60_000, mm: 0.4 },
+  { t: 120_000, mm: 0 },
+]);
+assert.ok(Math.abs(rainReadings.totalMm - 0.6) < 1e-9);
+assert.ok(Math.abs((rainReadings.maxRateMmH ?? 0) - 24) < 1e-9);
+
+const rainAfterGap = summarizeRainReadings([
+  { t: 0, mm: null },
+  { t: 3_600_000, mm: 1 },
+]);
+assert.ok(Math.abs(rainAfterGap.totalMm - 1) < 1e-9);
+assert.ok(Math.abs((rainAfterGap.maxRateMmH ?? 0) - 1) < 1e-9);
+
+const dryReadings = summarizeRainReadings([{ t: 0, mm: 0 }]);
+assert.equal(dryReadings.totalMm, 0);
+assert.equal(dryReadings.maxRateMmH, 0);
 
 console.log('✔ Pruebas de lógica superadas');

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import type { RainStats } from '../lib/rain';
 import type { ConnectionState } from '../mqtt/client';
 import type { Reading } from '../types/weather';
 
@@ -12,9 +13,12 @@ interface WeatherState {
   lastParseError: string | null;
   receivedCount: number;
   discardedCount: number;
+  rainTodayMm: number;
+  rainMaxRateMmH: number | null;
   setStatus: (status: ConnectionState, detail?: string | null) => void;
   setError: (error: string | null) => void;
   setLatest: (reading: Reading | null) => void;
+  setRainStats: (stats: RainStats) => void;
   ingest: (reading: Reading) => void;
   noteDiscarded: (reason: string) => void;
   reset: () => void;
@@ -29,6 +33,8 @@ export const useWeatherStore = create<WeatherState>((set) => ({
   lastParseError: null,
   receivedCount: 0,
   discardedCount: 0,
+  rainTodayMm: 0,
+  rainMaxRateMmH: null,
 
   setStatus: (status, detail = null) =>
     set((state) => ({
@@ -43,6 +49,12 @@ export const useWeatherStore = create<WeatherState>((set) => ({
     set({
       latest: reading,
       lastMessageAt: reading?.receivedAt ?? null,
+    }),
+
+  setRainStats: (stats) =>
+    set({
+      rainTodayMm: stats.totalMm,
+      rainMaxRateMmH: stats.maxRateMmH,
     }),
 
   ingest: (reading) =>
@@ -70,5 +82,7 @@ export const useWeatherStore = create<WeatherState>((set) => ({
       lastParseError: null,
       receivedCount: 0,
       discardedCount: 0,
+      rainTodayMm: 0,
+      rainMaxRateMmH: null,
     }),
 }));

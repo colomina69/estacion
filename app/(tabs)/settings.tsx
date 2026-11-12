@@ -8,6 +8,7 @@ import { isExpoGo } from '../../src/lib/environment';
 import { stationService } from '../../src/station/stationService';
 import { useSettingsStore } from '../../src/store/settingsStore';
 import { useHistoryStore } from '../../src/store/historyStore';
+import { useWeatherStore } from '../../src/store/weatherStore';
 import { AppText, Button, Card, Screen, SectionHeader } from '../../src/ui/components/base';
 import { SegmentedControl, SwitchRow, TextField } from '../../src/ui/components/inputs';
 import { spacing, useTheme } from '../../src/ui/theme';
@@ -202,6 +203,7 @@ export default function SettingsScreen() {
           onPress: async () => {
             await clearReadings();
             setReadings(0);
+            useWeatherStore.getState().setRainStats({ totalMm: 0, maxRateMmH: null });
             await useHistoryStore.getState().load();
             setFeedback({ kind: 'ok', text: 'Histórico eliminado.' });
           },

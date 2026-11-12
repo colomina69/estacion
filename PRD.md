@@ -114,7 +114,7 @@ El propietario de la estación recibe datos técnicos en bruto (JSON de `rtl_433
 | ID | Requisito | Prioridad |
 |---|---|---|
 | RF-14 | Tarjeta principal con temperatura, icono meteorológico y sensación térmica | Must |
-| RF-15 | Tarjetas de humedad, punto de rocío, viento medio/máximo, dirección, lluvia, UV, lux y batería | Must |
+| RF-15 | Tarjetas de humedad, punto de rocío, viento medio/máximo, dirección, lluvia de hoy, intensidad máxima de precipitación, lluvia acumulada, UV, lux y batería | Must |
 | RF-16 | Brújula/rosa de los vientos para `wind_dir_deg` | Should |
 | RF-17 | Pull-to-refresh que reconecta si está offline | Should |
 | RF-18 | Skeleton de carga y estado vacío ("Esperando datos de la estación") | Must |
@@ -241,6 +241,8 @@ rtl_433/chuwi/events
 - **Cardinal:** 16 rumbos (N, NNE, NE, …) a partir de `wind_dir_deg`.
 - **Categoría UV:** 0–2 Bajo, 3–5 Moderado, 6–7 Alto, 8–10 Muy alto, 11+ Extremo.
 - **Delta de lluvia:** `max(0, rain_actual − rain_anterior)`; si `rain_actual < rain_anterior`, asumir reinicio del contador y usar `rain_actual`.
+- **Lluvia de hoy:** suma de los deltas de lluvia con `received_at` desde la medianoche local.
+- **Intensidad máxima:** `max(delta_i / horas_entre_lecturas)` para cada delta positivo, ignorando intervalos menores de 5 s.
 
 ---
 
