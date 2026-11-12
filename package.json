@@ -1,0 +1,59 @@
+{
+  "name": "estacio",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "private": true,
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild",
+    "typecheck": "tsc --noEmit",
+    "start:go": "expo start --go",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/logic-tests.mts",
+    "test:logic": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/logic-tests.mts",
+    "test:mqtt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/mqtt-smoke.mts",
+    "test:mqtt:ws": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/mqtt-ws-smoke.mts"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "buffer": "^6.0.3",
+    "expo": "~58.0.24",
+    "expo-constants": "~58.0.16",
+    "expo-dev-client": "~58.0.19",
+    "expo-font": "~58.0.12",
+    "expo-linear-gradient": "~58.0.4",
+    "expo-linking": "~58.0.17",
+    "expo-notifications": "~58.1.9",
+    "expo-router": "~58.0.31",
+    "expo-secure-store": "~58.0.3",
+    "expo-splash-screen": "~58.0.14",
+    "expo-sqlite": "~58.0.16",
+    "expo-status-bar": "~58.0.5",
+    "expo-system-ui": "~58.0.7",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1",
+    "react-native-svg": "15.16.0",
+    "react-native-tcp-socket": "^6.4.3",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.13",
+    "@types/react": "~19.3.0",
+    "babel-preset-expo": "^58.0.25",
+    "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "react-dom": "19.3.0"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-tcp-socket"
+        ]
+      }
+    }
+  }
+}
