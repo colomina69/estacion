@@ -1,6 +1,7 @@
 export type UnitSystem = 'metric' | 'imperial';
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type MqttTransportType = 'tcp' | 'ws';
+export type HistorySource = 'influx' | 'local';
 
 export interface AlertThresholds {
   windMaxKmh: number;
@@ -26,6 +27,13 @@ export interface Settings {
   retentionDays: number;
   alertsEnabled: boolean;
   thresholds: AlertThresholds;
+  historySource: HistorySource;
+  influxUrl: string;
+  influxOrg: string;
+  influxBucket: string;
+  influxMeasurement: string;
+  influxDevice: string;
+  influxToken: string;
 }
 
 export interface Reading {
@@ -64,3 +72,9 @@ export interface HistoryPoint {
 }
 
 export type HistoryRange = '1h' | '24h' | '7d';
+export type HistorySelection = HistoryRange | 'custom';
+
+export interface CustomRange {
+  start: number;
+  end: number;
+}

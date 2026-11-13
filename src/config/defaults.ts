@@ -16,6 +16,14 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   retentionDays: 30,
   alertsEnabled: true,
+  historySource: 'influx',
+  influxUrl: 'https://influx.benicolo.com',
+  influxOrg: 'my-org',
+  influxBucket: 'my-bucket',
+  influxMeasurement: 'vevor_7in1',
+  influxDevice: '7907',
+  influxToken:
+    'SWQgTMCPktgA74kWJTGxebh_Hp18Hk77IbNOUVESudaSBuFVJp1tq9ewWg9eDGmmZueeJ58IVjMoY3kWAFUL4g==',
   thresholds: {
     windMaxKmh: 40,
     rainDeltaMm: 2,

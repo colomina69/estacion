@@ -44,6 +44,12 @@ async function deleteStored(): Promise<void> {
   await SecureStore.deleteItemAsync(SETTINGS_KEY);
 }
 
+function nonEmpty(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value
+    : fallback;
+}
+
 function mergeSettings(stored: Partial<Settings> | null): Settings {
   const port = Number(stored?.port);
   const transport =
@@ -58,6 +64,23 @@ function mergeSettings(stored: Partial<Settings> | null): Settings {
       typeof stored?.wsUrl === 'string' && stored.wsUrl.length > 0
         ? stored.wsUrl
         : DEFAULT_SETTINGS.wsUrl,
+    historySource:
+      stored?.historySource === 'local' ? 'local' : 'influx',
+    influxUrl: nonEmpty(stored?.influxUrl, DEFAULT_SETTINGS.influxUrl),
+    influxOrg: nonEmpty(stored?.influxOrg, DEFAULT_SETTINGS.influxOrg),
+    influxBucket: nonEmpty(
+      stored?.influxBucket,
+      DEFAULT_SETTINGS.influxBucket,
+    ),
+    influxMeasurement: nonEmpty(
+      stored?.influxMeasurement,
+      DEFAULT_SETTINGS.influxMeasurement,
+    ),
+    influxDevice:
+      typeof stored?.influxDevice === 'string'
+        ? stored.influxDevice
+        : DEFAULT_SETTINGS.influxDevice,
+    influxToken: nonEmpty(stored?.influxToken, DEFAULT_SETTINGS.influxToken),
     port: Number.isFinite(port) && port > 0 ? port : DEFAULT_SETTINGS.port,
     thresholds: {
       ...DEFAULT_SETTINGS.thresholds,

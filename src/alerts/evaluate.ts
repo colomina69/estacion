@@ -1,6 +1,6 @@
 import { recordAlert, wasAlertRecently } from '../db/database';
 import { formatRelative } from '../lib/time';
-import { formatTemperature, formatWind } from '../lib/units';
+import { formatRain, formatTemperature, formatWind } from '../lib/units';
 import type { Reading, Settings } from '../types/weather';
 import { sendWeatherAlert } from './notifications';
 
@@ -49,7 +49,10 @@ export async function evaluateReadingAlerts(
       reading.rainDeltaMm,
       limits.rainDeltaMm,
       'Lluvia intensa',
-      `Se han acumulado ${reading.rainDeltaMm.toFixed(1)} mm desde la última lectura.`,
+      `Se han acumulado ${formatRain(
+        reading.rainDeltaMm,
+        settings.units,
+      )} desde la última lectura.`,
       cooldownMs,
     );
   }

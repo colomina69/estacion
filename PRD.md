@@ -34,7 +34,7 @@ El propietario de la estación recibe datos técnicos en bruto (JSON de `rtl_433
 
 1. Visualizar todas las métricas de la estación en una pantalla principal en menos de 5 segundos tras abrir la app.
 2. Mantener una conexión MQTT estable con reconexión automática.
-3. Conservar 30 días de histórico local y permitir analizarlo con gráficas.
+3. Consultar el histórico almacenado en InfluxDB y analizarlo con gráficas de 1 h, 24 h y 7 días.
 4. Avisar al usuario cuando se superen umbrales meteorológicos configurables.
 5. Ofrecer un diseño sencillo, moderno y legible en exteriores (alto contraste, modo claro/oscuro).
 
@@ -114,7 +114,7 @@ El propietario de la estación recibe datos técnicos en bruto (JSON de `rtl_433
 | ID | Requisito | Prioridad |
 |---|---|---|
 | RF-14 | Tarjeta principal con temperatura, icono meteorológico y sensación térmica | Must |
-| RF-15 | Tarjetas de humedad, punto de rocío, viento medio/máximo, dirección, lluvia de hoy, intensidad máxima de precipitación, lluvia acumulada, UV, lux y batería | Must |
+| RF-15 | Tarjetas de humedad, punto de rocío, viento medio/máximo, dirección, lluvia de hoy, intensidad máxima de precipitación, lluvia acumulada, UV, lux y batería; lluvia en litros y L/h | Must |
 | RF-16 | Brújula/rosa de los vientos para `wind_dir_deg` | Should |
 | RF-17 | Pull-to-refresh que reconecta si está offline | Should |
 | RF-18 | Skeleton de carga y estado vacío ("Esperando datos de la estación") | Must |
@@ -123,11 +123,11 @@ El propietario de la estación recibe datos técnicos en bruto (JSON de `rtl_433
 
 | ID | Requisito | Prioridad |
 |---|---|---|
-| RF-19 | Persistir cada lectura en SQLite con índice por fecha | Must |
-| RF-20 | Retención configurable, por defecto 30 días, con purga automática | Must |
-| RF-21 | Gráficas de temperatura/humedad, viento y lluvia para 1 h, 24 h y 7 d | Should |
-| RF-22 | Agregación por minuto para rangos largos y rendimiento estable | Should |
-| RF-23 | Sobrevivir a cierres y reinicios de la app | Must |
+| RF-19 | Cargar el histórico desde InfluxDB 2.x mediante consultas Flux, con opción de usar la caché local | Must |
+| RF-20 | Mantener una caché local de lecturas para vivo, alertas y lluvia, con retención de 30 días | Must |
+| RF-21 | Gráficas de temperatura/humedad, viento y lluvia para 1 h, 24 h, 7 d y un rango personalizado entre dos fechas y horas, elegido con calendario y reloj | Should |
+| RF-22 | Agregación Flux: 1 min (1 h), 5 min (24 h), 30 min (7 días) y ventana adaptativa (máx. 500 puntos) para fechas personalizadas | Should |
+| RF-23 | El histórico de InfluxDB persiste independientemente de la app; la caché local sobrevive reinicios | Must |
 
 ### 6.5 Alertas
 
@@ -149,6 +149,7 @@ El propietario de la estación recibe datos técnicos en bruto (JSON de `rtl_433
 | RF-32 | Cambiar unidades y tema (sistema/claro/oscuro) | Could |
 | RF-33 | Restablecer ajustes y borrar histórico con confirmación | Should |
 | RF-34 | Mostrar versión de la app y estado de la build | Could |
+| RF-35 | Configurar URL, organización, bucket, measurement, device y token de InfluxDB, y probar la conexión | Must |
 
 ---
 
@@ -226,7 +227,7 @@ rtl_433/chuwi/events
 | `wind_avg_km_h` | number | km/h | 0…200 | Sí | Viento medio |
 | `wind_max_km_h` | number | km/h | 0…250 | Sí | Viento máximo |
 | `wind_dir_deg` | number | grados | 0–359 | Sí | Brújula |
-| `rain_mm` | number | mm acumulados | 0…∞ | Sí | Lluvia total + delta |
+| `rain_mm` | number | mm acumulados | 0…∞ | Sí | Lluvia total + delta (la UI muestra L) |
 | `uvi` | number | índice UV | 0…15 | Sí | Tarjeta UV |
 | `light_lux` | number | lux | 0…150 000 | Sí | Tarjeta luminosidad |
 | `mic` | string | — | `CHECKSUM` | Sí | Calidad de lectura |
@@ -242,6 +243,7 @@ rtl_433/chuwi/events
 - **Categoría UV:** 0–2 Bajo, 3–5 Moderado, 6–7 Alto, 8–10 Muy alto, 11+ Extremo.
 - **Delta de lluvia:** `max(0, rain_actual − rain_anterior)`; si `rain_actual < rain_anterior`, asumir reinicio del contador y usar `rain_actual`.
 - **Lluvia de hoy:** suma de los deltas de lluvia con `received_at` desde la medianoche local.
+- **Unidad de lluvia:** la UI muestra litros (`L`) y `L/h`; 1 mm de precipitación equivale a 1 L/m². El campo de InfluxDB sigue siendo `rain_mm`.
 - **Intensidad máxima:** `max(delta_i / horas_entre_lecturas)` para cada delta positivo, ignorando intervalos menores de 5 s.
 
 ---
@@ -256,7 +258,8 @@ rtl_433/chuwi/events
 | Navegación | `expo-router` (tabs) |
 | Estado | Zustand (`weatherStore`, `historyStore`, `settingsStore`) |
 | MQTT | Cliente MQTT 3.1.1 propio (QoS 0) sobre WebSocket (WSS) y TCP |
-| Persistencia | `expo-sqlite` |
+| Histórico | **InfluxDB 2.7** mediante API `/api/v2/query` y Flux |
+| Caché local | `expo-sqlite` (vivo, alertas y estadísticas de lluvia) |
 | Seguridad | `expo-secure-store` |
 | Notificaciones | `expo-notifications` |
 | Gráficas | `react-native-svg` (componentes propios o `react-native-gifted-charts`) |
@@ -274,7 +277,21 @@ rtl_433/chuwi/events
 
 La integración se valida con `npm run test:mqtt:ws` (WSS, equivalente a Expo Go) y `npm run test:mqtt` (TCP), que conectan al broker real, se suscriben al topic y parsean un payload recibido.
 
-### 9.3 Estructura de carpetas implementada
+### 9.3 Histórico en InfluxDB
+
+- Servidor: `https://influx.benicolo.com` (InfluxDB 2.7.12).
+- Organización: `my-org`; bucket: `my-bucket`.
+- Measurement: `vevor_7in1`; tag `device=7907`.
+- Campos: `temperature`, `humidity`, `wind_avg_km_h`, `wind_max_km_h`, `wind_dir_deg`, `rain_mm`, `uvi`, `light_lux`, `battery_ok`.
+- Consulta Flux: un stream por campo con `aggregateWindow` (`mean` para temperatura, humedad, viento medio, UV y luz; `max` para viento máximo y lluvia), `union`, `pivot` y `sort`.
+- Ventanas: 1 min (1 h), 5 min (24 h), 30 min (7 días) y adaptativa para rangos personalizados.
+- Rango personalizado: fecha y hora de inicio/fin elegidas con calendario y reloj nativos; formato visible `DD-MM-AAAA HH:mm`. La ventana se calcula para no superar ~500 puntos.
+- El CSV se normaliza a `HistoryPoint`; la lluvia se deriva de la serie acumulada `rain_mm`.
+- El token se guarda en SecureStore y las consultas viajan por HTTPS.
+- En Ajustes se puede cambiar a la fuente local (SQLite) si InfluxDB no está disponible.
+- Validación: `npm run test:influx` consulta los tres rangos contra el servidor real.
+
+### 9.4 Estructura de carpetas implementada
 
 ```
 app/
@@ -290,6 +307,9 @@ src/
     evaluate.ts        # umbrales y cooldown
   config/defaults.ts
   db/database.ts       # schema, insert, query, agregaciones, purga
+  influx/
+    client.ts          # Flux: consultas y prueba de conexión
+    csv.ts             # parser CSV y mapeo a HistoryPoint
   lib/
     derived.ts         # punto de rocío, wind chill, cardinal, UV
     units.ts
@@ -311,7 +331,7 @@ src/
     components/        # base, inputs, charts, weather
 ```
 
-### 9.4 Máquina de estados de conexión
+### 9.5 Máquina de estados de conexión
 
 ```
 idle → connecting → connected
@@ -323,7 +343,7 @@ connected → offline (pérdida de red) → reconnecting
 - Al recuperar conexión se vuelve a suscribir al topic.
 - `lastMessageAt` se actualiza con cada mensaje; si supera 5 min → dato obsoleto.
 
-### 9.5 Esquema SQLite
+### 9.6 Esquema SQLite
 
 ```sql
 CREATE TABLE IF NOT EXISTS readings (
@@ -417,8 +437,8 @@ CREATE TABLE IF NOT EXISTS alert_events (
 │ └─────────────┘ └───────────────┘ │
 │ ┌─────────────┐ ┌───────────────┐ │
 │ │ Viento      │ │ Lluvia        │ │
-│ │ 2.4 km/h    │ │ 125.1 mm      │ │
-│ │ NO 322°     │ │ +0.0 mm hoy   │ │
+│ │ 2.4 km/h    │ │ 125.1 L       │ │
+│ │ NO 322°     │ │ +0.0 L hoy    │ │
 │ │        ◔    │ │               │ │
 │ └─────────────┘ └───────────────┘ │
 │ ┌─────────────┐ ┌───────────────┐ │
@@ -436,7 +456,8 @@ CREATE TABLE IF NOT EXISTS alert_events (
 
 #### Histórico (tab 2)
 
-- Selector segmentado: `1 h | 24 h | 7 d`.
+- Selector segmentado: `1 h | 24 h | 7 d | Fechas`.
+- Rango personalizado: botones de fecha y hora para «Desde» y «Hasta», calendario y reloj nativos, formato `DD-MM-AAAA HH:mm`, botón «Aplicar rango» y validación.
 - Gráfica de línea: temperatura y humedad.
 - Gráfica de línea/área: viento medio y máximo.
 - Barras: lluvia por intervalo.
@@ -554,6 +575,38 @@ Entonces las tarjetas se distribuyen en 2 columnas sin desbordar
 Y en tablets se muestran hasta 3–4 columnas
 ```
 
+### CA-10 — Histórico desde InfluxDB
+
+```gherkin
+Dada una configuración válida de InfluxDB
+Cuando abro la pestaña Histórico
+Entonces la app consulta InfluxDB por HTTPS
+Y muestra las gráficas de 1 h, 24 h y 7 días con datos reales
+Y el pie indica "InfluxDB" como fuente
+```
+
+### CA-11 — Rango personalizado
+
+```gherkin
+Dado que estoy en la pestaña Histórico
+Cuando selecciono "Fechas"
+Y elijo 10-11-2026 08:00 como inicio con el calendario y el reloj
+Y elijo 12-11-2026 20:00 como fin
+Y pulso "Aplicar rango"
+Entonces la app consulta InfluxDB entre esas fechas y horas
+Y las gráficas y estadísticas corresponden a ese periodo
+Y la cabecera muestra "10-11-2026 08:00 – 12-11-2026 20:00"
+```
+
+### CA-12 — Rango inválido
+
+```gherkin
+Dado el formulario de fechas personalizado
+Cuando la fecha/hora final es anterior o igual a la inicial
+Entonces se muestra un mensaje de error
+Y no se lanza la consulta
+```
+
 ---
 
 ## 12. Plan de pruebas
@@ -563,6 +616,7 @@ Y en tablets se muestran hasta 3–4 columnas
 | Unitarias | Parser, derivadas (rocío, wind chill, cardinal, UV), unidades | Jest |
 | Unitarias | Umbrales, cooldown y deduplicación de alertas | Jest |
 | Integración | WSS y TCP contra el broker real: conexión, suscripción y recepción | `npm run test:mqtt:ws`, `npm run test:mqtt` |
+| Integración | InfluxDB: conexión, consultas Flux y parseo CSV en 1 h/24 h/7 d y rango personalizado | `npm run test:influx` |
 | Integración | SQLite: inserción, consultas, agregación y purga | Jest + expo-sqlite |
 | Manual | Reconexión, modo avión, credenciales erróneas, payload corrupto | Dispositivo Android |
 | UI | Layout 360 dp, tablet, modo oscuro, fuente grande | Dispositivo / emulador |
@@ -578,7 +632,7 @@ Y en tablets se muestran hasta 3–4 columnas
 | M0 — Setup | Proyecto Expo + TS + router + dev client compilado | La app arranca en dispositivo |
 | M1 — MQTT | Conexión WSS (Expo Go) y TCP, auth, suscripción y parser | Datos reales visibles en consola/UI básica |
 | M2 — Dashboard | Diseño final, tarjetas, estados y brújula | CA-01, CA-02, CA-04 y CA-09 |
-| M3 — Histórico | SQLite, gráficas y retención | CA-06 |
+| M3 — Histórico | InfluxDB, gráficas, configuración y fallback local | CA-06 y CA-10 |
 | M4 — Alertas | Umbrales, notificaciones y cooldown | CA-07 |
 | M5 — Calidad | Tests, accesibilidad, build EAS y documentación | Resto de criterios de aceptación |
 
@@ -596,7 +650,9 @@ Y en tablets se muestran hasta 3–4 columnas
 | `time` sin zona horaria | Media | Medio | Interpretar como hora local del dispositivo; guardar `received_at` |
 | `rain_mm` acumulado con reinicios | Media | Bajo | Detección de decremento y delta acotado |
 | Payload cambia de modelo/campos | Media | Medio | Parser tolerante y diagnóstico de campos desconocidos |
-| Histórico crece sin control | Baja | Medio | Retención y purga automática con índice |
+| Caché local crece sin control | Baja | Medio | Retención y purga automática con índice |
+| InfluxDB no disponible o token caducado | Media | Alto | Error visible, prueba de conexión y fallback a la fuente local |
+| Cambios de esquema en InfluxDB | Baja | Medio | Endpoint, org, bucket, measurement y tag editables en Ajustes |
 | Estación deja de publicar | Media | Medio | Estado "dato obsoleto" y alerta de conexión |
 
 ---
@@ -644,6 +700,22 @@ Sin telemetría remota en v1 (privacidad). Se registrarán métricas locales de 
 
 > Estos valores son la configuración por defecto de desarrollo. En la app se guardan en SecureStore y son editables. Nunca deben incluirse en el APK de producción ni en el repositorio.
 
+### A.2 Parámetros de InfluxDB
+
+| Parámetro | Valor |
+|---|---|
+| URL | `https://influx.benicolo.com` |
+| Versión | InfluxDB OSS 2.7.12 |
+| Organización | `my-org` |
+| Bucket | `my-bucket` |
+| Measurement | `vevor_7in1` |
+| Tag de dispositivo | `device=7907` |
+| Endpoint de consulta | `POST /api/v2/query?org=my-org` |
+| Autenticación | `Authorization: Token …` (SecureStore, editable en Ajustes) |
+| Ventanas | 1 min / 5 min / 30 min |
+
+Campos disponibles: `temperature`, `humidity`, `wind_avg_km_h`, `wind_max_km_h`, `wind_dir_deg`, `rain_mm`, `uvi`, `light_lux`, `battery_ok`.
+
 ### B. Skills recomendados (`find-skills`)
 
 Búsqueda realizada con `npx skills find expo`, `npx skills find "react native"` y `npx skills find mqtt`.
@@ -690,12 +762,13 @@ eas build --profile development --platform android
 npm test
 npm run test:mqtt:ws
 npm run test:mqtt
+npm run test:influx
 ```
 
 ### D. Definición de terminado (DoD)
 
 - Todos los requisitos `Must` implementados y verificados.
-- Criterios de aceptación CA-01 a CA-09 en verde.
+- Criterios de aceptación CA-01 a CA-12 en verde.
 - Sin crashes en las pruebas manuales.
 - Credenciales fuera de logs y del código fuente.
 - Build de desarrollo instalable en un dispositivo limpio.

@@ -2,15 +2,17 @@
 
 App Android desarrollada con Expo para visualizar en tiempo real la estación **Vevor-7in1** publicada por `rtl_433` en el broker MQTT `mqtt.benicolo.com`.
 
-Dashboard en vivo, histórico local con gráficas y alertas por umbral. Usa **MQTT sobre WebSocket seguro (WSS)**, por lo que funciona directamente en **Expo Go**; el transporte TCP queda disponible para development builds. El diseño, requisitos y criterios de aceptación están en [`PRD.md`](./PRD.md).
+Dashboard en vivo, **histórico desde InfluxDB** con gráficas y alertas por umbral. Usa **MQTT sobre WebSocket seguro (WSS)**, por lo que funciona directamente en **Expo Go**; el transporte TCP queda disponible para development builds. El diseño, requisitos y criterios de aceptación están en [`PRD.md`](./PRD.md).
 
 ## Funcionalidad
 
 - Conexión MQTT 3.1.1 por WebSocket seguro (WSS) o TCP, con autenticación y reconexión exponencial.
 - Suscripción a `rtl_433/chuwi/events` y parseo tolerante del payload.
 - Dashboard con temperatura, sensación térmica, humedad, punto de rocío, viento, brújula, lluvia de hoy, intensidad máxima, lluvia acumulada, UV, luminosidad y batería.
+- La lluvia se muestra siempre en **litros (L)** y la intensidad en **L/h**, independientemente del sistema de unidades (equivalencia: 1 mm = 1 L/m²).
 - Estado de conexión, última actualización y aviso de dato obsoleto.
-- Histórico en SQLite con gráficas de 1 h, 24 h y 7 días.
+- Histórico desde InfluxDB 2.7 con consultas Flux agregadas y gráficas de 1 h, 24 h, 7 días o un rango personalizado entre dos fechas y horas.
+- Caché local en SQLite para vivo, alertas y estadísticas de lluvia.
 - Alertas locales configurables: viento, lluvia, temperatura, UV, batería y pérdida de datos.
 - Ajustes de broker, credenciales, unidades, tema y retención.
 - Modo claro/oscuro y diseño responsive para móvil y tablet.
@@ -70,6 +72,7 @@ npx eas build --profile development --platform android
 | `npm test` | Pruebas de parser, derivadas y unidades |
 | `npm run test:mqtt:ws` | Prueba real WSS (la que usa Expo Go) |
 | `npm run test:mqtt` | Prueba real TCP 1883 |
+| `npm run test:influx` | Consulta real a InfluxDB en 1 h, 24 h, 7 d y rango personalizado |
 
 ## Configuración
 
@@ -84,7 +87,18 @@ Los valores por defecto son:
 | Password | `palomo69` |
 | Topic | `rtl_433/chuwi/events` |
 
-Se pueden cambiar desde **Ajustes**. Las credenciales se guardan con `expo-secure-store`, nunca en logs ni en el código de la pantalla.
+InfluxDB (histórico):
+
+| Parámetro | Valor |
+|---|---|
+| URL | `https://influx.benicolo.com` |
+| Organización | `my-org` |
+| Bucket | `my-bucket` |
+| Measurement | `vevor_7in1` |
+| Tag | `device=7907` |
+| Token | Editable en Ajustes (SecureStore) |
+
+Se pueden cambiar desde **Ajustes**. Las credenciales y el token se guardan con `expo-secure-store`, nunca en logs ni en el código de las pantallas. En Ajustes también se puede probar la conexión con InfluxDB y cambiar la fuente del histórico a la caché local.
 
 > **Seguridad:** WSS cifra la conexión con TLS y es el valor por defecto. El transporte TCP 1883 no cifra las credenciales; úsalo solo en una red de confianza.
 
@@ -100,18 +114,31 @@ src/
   mqtt/transport.ts       Transporte WebSocket (Expo Go) y TCP (dev build)
   mqtt/client.ts          Cliente, reconexión y keepalive
   mqtt/parser.ts          Normalización del payload de rtl_433
-  db/database.ts          SQLite, consultas y agregaciones
+  influx/client.ts        Consultas Flux y prueba de conexión
+  influx/csv.ts           Parseo CSV y mapeo a HistoryPoint
+  lib/dateRange.ts        Formato DD-MM-AAAA, horas y ventanas de agregación
+  db/database.ts          Caché SQLite, consultas y agregaciones
   station/                Servicio que conecta MQTT con los stores
   alerts/                 Evaluación de umbrales y notificaciones
   store/                  Zustand (weather, history, settings)
   ui/                     Tema y componentes reutilizables
-scripts/                  Pruebas de lógica y smoke test MQTT
+scripts/                  Pruebas de lógica, MQTT e InfluxDB
 ```
 
 El cliente MQTT es una implementación mínima de MQTT 3.1.1, con QoS 0, keepalive, reconexión con backoff y validación de `CONNACK`/`SUBACK`. Usa el `WebSocket` global de React Native (compatible con Expo Go) o `react-native-tcp-socket` en development builds. Esto evita los polyfills de Node que requiere `mqtt.js` en React Native.
 
+El histórico se consulta a InfluxDB 2.7 por HTTPS con Flux. Cada gráfica se agrega en el servidor (`1m`, `5m`, `30m` o una ventana adaptativa para rangos personalizados), se hace `pivot` de los campos y se parsea el CSV en el dispositivo. La caché SQLite se conserva para el dashboard, las alertas y las estadísticas de lluvia. Los campos `rain_mm` de InfluxDB se convierten a litros en la interfaz (1 mm = 1 L/m²).
+
+En la pestaña **Histórico** se puede elegir **Fechas** y seleccionar fecha y hora para «Desde» y «Hasta»:
+
+- La fecha se muestra en formato **DD-MM-AAAA**.
+- Pulsar la fecha abre el **calendario nativo**.
+- Pulsar la hora abre el **selector de hora** (24 h).
+- Después, pulsar **Aplicar rango**.
+
 ## Limitaciones conocidas
 
+- El histórico depende de que InfluxDB esté accesible; en Ajustes se puede volver a la fuente local.
 - TCP requiere un development build; Expo Go usa WSS automáticamente.
 - En Expo Go las notificaciones locales pueden estar limitadas; para alertas fiables usa un development build.
 - Las alertas en segundo plano requieren la app abierta o reciente; no hay foreground service en esta versión.

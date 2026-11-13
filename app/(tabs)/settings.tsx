@@ -4,6 +4,10 @@ import { Alert, StyleSheet, View } from 'react-native';
 
 import { DEFAULT_SETTINGS } from '../../src/config/defaults';
 import { clearReadings, countReadings } from '../../src/db/database';
+import {
+  influxConfigFromSettings,
+  testInfluxConnection,
+} from '../../src/influx/client';
 import { isExpoGo } from '../../src/lib/environment';
 import { stationService } from '../../src/station/stationService';
 import { useSettingsStore } from '../../src/store/settingsStore';
@@ -13,6 +17,7 @@ import { AppText, Button, Card, Screen, SectionHeader } from '../../src/ui/compo
 import { SegmentedControl, SwitchRow, TextField } from '../../src/ui/components/inputs';
 import { spacing, useTheme } from '../../src/ui/theme';
 import type {
+  HistorySource,
   MqttTransportType,
   Settings,
   ThemePreference,
@@ -39,6 +44,13 @@ interface FormState {
   cooldownMinutes: string;
   offlineMinutes: string;
   battery: boolean;
+  historySource: HistorySource;
+  influxUrl: string;
+  influxOrg: string;
+  influxBucket: string;
+  influxMeasurement: string;
+  influxDevice: string;
+  influxToken: string;
 }
 
 function fromSettings(settings: Settings): FormState {
@@ -62,6 +74,13 @@ function fromSettings(settings: Settings): FormState {
     cooldownMinutes: String(settings.thresholds.cooldownMinutes),
     offlineMinutes: String(settings.thresholds.offlineMinutes),
     battery: settings.thresholds.battery,
+    historySource: settings.historySource,
+    influxUrl: settings.influxUrl,
+    influxOrg: settings.influxOrg,
+    influxBucket: settings.influxBucket,
+    influxMeasurement: settings.influxMeasurement,
+    influxDevice: settings.influxDevice,
+    influxToken: settings.influxToken,
   };
 }
 
@@ -94,6 +113,13 @@ function toSettings(form: FormState): Settings {
       offlineMinutes: Math.max(1, parseNumber(form.offlineMinutes, 10)),
       battery: form.battery,
     },
+    historySource: form.historySource,
+    influxUrl: form.influxUrl.trim(),
+    influxOrg: form.influxOrg.trim(),
+    influxBucket: form.influxBucket.trim(),
+    influxMeasurement: form.influxMeasurement.trim(),
+    influxDevice: form.influxDevice.trim(),
+    influxToken: form.influxToken.trim(),
   };
 }
 
@@ -106,7 +132,12 @@ export default function SettingsScreen() {
   const [form, setForm] = useState<FormState>(() => fromSettings(settings));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testingInflux, setTestingInflux] = useState(false);
   const [feedback, setFeedback] = useState<{
+    kind: 'ok' | 'error';
+    text: string;
+  } | null>(null);
+  const [influxFeedback, setInfluxFeedback] = useState<{
     kind: 'ok' | 'error';
     text: string;
   } | null>(null);
@@ -128,6 +159,26 @@ export default function SettingsScreen() {
 
   const usingWebSocket = isExpoGo() || form.transport === 'ws';
 
+  const validateInflux = (): string | null => {
+    if (form.historySource !== 'influx') return null;
+    if (!/^https?:\/\//i.test(form.influxUrl.trim())) {
+      return 'La URL de InfluxDB debe empezar por http:// o https://.';
+    }
+    if (!form.influxOrg.trim()) {
+      return 'La organización de InfluxDB no puede estar vacía.';
+    }
+    if (!form.influxBucket.trim()) {
+      return 'El bucket de InfluxDB no puede estar vacío.';
+    }
+    if (!form.influxMeasurement.trim()) {
+      return 'El measurement de InfluxDB no puede estar vacío.';
+    }
+    if (!form.influxToken.trim()) {
+      return 'El token de InfluxDB no puede estar vacío.';
+    }
+    return null;
+  };
+
   const validate = (): string | null => {
     if (usingWebSocket) {
       if (!/^wss?:\/\//i.test(form.wsUrl.trim())) {
@@ -141,7 +192,7 @@ export default function SettingsScreen() {
       }
     }
     if (!form.topic.trim()) return 'El topic no puede estar vacío.';
-    return null;
+    return validateInflux();
   };
 
   const handleSave = async () => {
@@ -154,6 +205,7 @@ export default function SettingsScreen() {
     try {
       await update(toSettings(form));
       await stationService.restart();
+      void useHistoryStore.getState().load();
       setFeedback({ kind: 'ok', text: 'Ajustes guardados y conexión reiniciada.' });
     } catch (error) {
       setFeedback({
@@ -178,6 +230,27 @@ export default function SettingsScreen() {
       setFeedback({ kind: result.ok ? 'ok' : 'error', text: result.message });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleTestInflux = async () => {
+    const validation = validateInflux();
+    if (validation) {
+      setFeedback({ kind: 'error', text: validation });
+      return;
+    }
+    setTestingInflux(true);
+    setInfluxFeedback(null);
+    try {
+      const result = await testInfluxConnection(
+        influxConfigFromSettings(toSettings(form)),
+      );
+      setInfluxFeedback({
+        kind: result.ok ? 'ok' : 'error',
+        text: result.message,
+      });
+    } finally {
+      setTestingInflux(false);
     }
   };
 
@@ -400,7 +473,7 @@ export default function SettingsScreen() {
             style={styles.flex}
           />
           <TextField
-            label="Lluvia (mm)"
+            label="Lluvia (L)"
             value={form.rainDeltaMm}
             onChangeText={(value) => set('rainDeltaMm', value)}
             keyboardType="decimal-pad"
@@ -463,7 +536,106 @@ export default function SettingsScreen() {
         />
       </Card>
 
-      <SectionHeader title="Datos" subtitle="Histórico local en SQLite" />
+      <SectionHeader
+        title="Histórico (InfluxDB)"
+        subtitle="Fuente de los datos de las gráficas"
+      />
+      <Card>
+        <AppText variant="label" style={{ marginBottom: 6 }}>
+          Fuente del histórico
+        </AppText>
+        <SegmentedControl
+          options={[
+            { value: 'influx', label: 'InfluxDB' },
+            { value: 'local', label: 'Local' },
+          ]}
+          value={form.historySource}
+          onChange={(value) => set('historySource', value)}
+        />
+
+        {form.historySource === 'influx' ? (
+          <>
+            <View style={{ height: spacing.md }} />
+            <TextField
+              label="URL"
+              value={form.influxUrl}
+              onChangeText={(value) => set('influxUrl', value)}
+              placeholder="https://influx.benicolo.com"
+            />
+            <View style={styles.numberGrid}>
+              <TextField
+                label="Organización"
+                value={form.influxOrg}
+                onChangeText={(value) => set('influxOrg', value)}
+                style={styles.flex}
+              />
+              <TextField
+                label="Bucket"
+                value={form.influxBucket}
+                onChangeText={(value) => set('influxBucket', value)}
+                style={styles.flex}
+              />
+            </View>
+            <View style={styles.numberGrid}>
+              <TextField
+                label="Measurement"
+                value={form.influxMeasurement}
+                onChangeText={(value) => set('influxMeasurement', value)}
+                style={styles.flex}
+              />
+              <TextField
+                label="Device (tag)"
+                value={form.influxDevice}
+                onChangeText={(value) => set('influxDevice', value)}
+                hint="Vacío para todos"
+                style={styles.flex}
+              />
+            </View>
+            <TextField
+              label="Token API"
+              value={form.influxToken}
+              onChangeText={(value) => set('influxToken', value)}
+              secure
+              hint="Se guarda cifrado con SecureStore."
+            />
+            <Button
+              title="Probar InfluxDB"
+              variant="secondary"
+              icon="server-outline"
+              onPress={handleTestInflux}
+              loading={testingInflux}
+            />
+            {influxFeedback ? (
+              <AppText
+                variant="bodyStrong"
+                color={
+                  influxFeedback.kind === 'ok' ? colors.success : colors.danger
+                }
+                style={{ marginTop: spacing.sm }}
+              >
+                {influxFeedback.text}
+              </AppText>
+            ) : null}
+            <AppText variant="caption" style={{ marginTop: spacing.sm }}>
+              Consultas Flux agregadas: 1 min (1 h), 5 min (24 h) y 30 min
+              (7 días).
+            </AppText>
+          </>
+        ) : (
+          <AppText variant="caption" style={{ marginTop: spacing.sm }}>
+            Se usarán las lecturas guardadas localmente en SQLite.
+          </AppText>
+        )}
+
+        <Button
+          title="Guardar y recargar histórico"
+          onPress={handleSave}
+          loading={saving}
+          style={{ marginTop: spacing.md }}
+        />
+      </Card>
+
+      <SectionHeader title="Datos" subtitle="Caché local para vivo y alertas" />
       <Card>
         <TextField
           label="Retención (días)"

@@ -10,9 +10,9 @@ export function convertWind(valueKmh: number | null, units: UnitSystem): number 
   return units === 'imperial' ? valueKmh * 0.621371 : valueKmh;
 }
 
-export function convertRain(valueMm: number | null, units: UnitSystem): number | null {
+export function convertRain(valueMm: number | null, _units: UnitSystem): number | null {
   if (valueMm === null) return null;
-  return units === 'imperial' ? valueMm / 25.4 : valueMm;
+  return valueMm;
 }
 
 export function temperatureUnit(units: UnitSystem): string {
@@ -23,8 +23,8 @@ export function windUnit(units: UnitSystem): string {
   return units === 'imperial' ? 'mph' : 'km/h';
 }
 
-export function rainUnit(units: UnitSystem): string {
-  return units === 'imperial' ? 'in' : 'mm';
+export function rainUnit(_units: UnitSystem): string {
+  return 'L';
 }
 
 export function rainRateUnit(units: UnitSystem): string {

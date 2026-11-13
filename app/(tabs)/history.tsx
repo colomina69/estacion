@@ -1,8 +1,18 @@
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
-import { HISTORY_RANGES } from '../../src/db/database';
+import { INFLUX_RANGES } from '../../src/influx/client';
+import {
+  formatDateInput,
+  formatDateTimeRange,
+  formatTimeInput,
+  validateCustomRange,
+} from '../../src/lib/dateRange';
 import { formatShortDate, formatShortTime } from '../../src/lib/time';
 import {
   convertTemperature,
@@ -10,6 +20,7 @@ import {
   formatRain,
   formatTemperature,
   formatWind,
+  rainUnit,
   temperatureUnit,
   windUnit,
 } from '../../src/lib/units';
@@ -17,6 +28,7 @@ import { useHistoryStore } from '../../src/store/historyStore';
 import { useSettingsStore } from '../../src/store/settingsStore';
 import {
   AppText,
+  Button,
   Card,
   EmptyState,
   Screen,
@@ -25,13 +37,19 @@ import {
 } from '../../src/ui/components/base';
 import { SegmentedControl } from '../../src/ui/components/inputs';
 import { BarChart, LineChart } from '../../src/ui/components/charts';
-import { spacing, useTheme } from '../../src/ui/theme';
-import type { HistoryPoint, HistoryRange } from '../../src/types/weather';
+import { radius, spacing, useTheme } from '../../src/ui/theme';
+import type {
+  HistoryPoint,
+  HistorySelection,
+} from '../../src/types/weather';
 
-const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const RANGE_OPTIONS: { value: HistorySelection; label: string }[] = [
   { value: '1h', label: '1 h' },
   { value: '24h', label: '24 h' },
   { value: '7d', label: '7 días' },
+  { value: 'custom', label: 'Fechas' },
 ];
 
 function valuesOf(
@@ -43,6 +61,55 @@ function valuesOf(
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
 }
 
+function RangePickerRow({
+  label,
+  value,
+  onPickDate,
+  onPickTime,
+}: {
+  label: string;
+  value: number;
+  onPickDate: () => void;
+  onPickTime: () => void;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <View style={styles.rangeField}>
+      <AppText variant="label" style={{ marginBottom: 6 }}>
+        {label}
+      </AppText>
+      <View style={styles.rangeControls}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label}: ${formatDateInput(value)}. Abrir calendario.`}
+          onPress={onPickDate}
+          style={[
+            styles.pickerButton,
+            { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+          ]}
+        >
+          <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
+          <AppText variant="bodyStrong">{formatDateInput(value)}</AppText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label}: ${formatTimeInput(value)}. Cambiar hora.`}
+          onPress={onPickTime}
+          style={[
+            styles.pickerButton,
+            styles.timeButton,
+            { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+          ]}
+        >
+          <Ionicons name="time-outline" size={18} color={colors.textMuted} />
+          <AppText variant="bodyStrong">{formatTimeInput(value)}</AppText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export default function HistoryScreen() {
   const { colors } = useTheme();
   const range = useHistoryStore((state) => state.range);
@@ -51,17 +118,113 @@ export default function HistoryScreen() {
   const error = useHistoryStore((state) => state.error);
   const load = useHistoryStore((state) => state.load);
   const setRange = useHistoryStore((state) => state.setRange);
+  const customRange = useHistoryStore((state) => state.customRange);
+  const applyCustomRange = useHistoryStore((state) => state.applyCustomRange);
+  const loadedSource = useHistoryStore((state) => state.source);
   const units = useSettingsStore((state) => state.settings.units);
+  const configuredSource = useSettingsStore(
+    (state) => state.settings.historySource,
+  );
+  const activeSource = loadedSource ?? configuredSource;
+
+  const [startMs, setStartMs] = useState(() => {
+    if (customRange) return customRange.start;
+    const date = new Date();
+    date.setDate(date.getDate() - 6);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  });
+  const [endMs, setEndMs] = useState(() => {
+    if (customRange) return customRange.end;
+    const date = new Date();
+    date.setHours(23, 59, 59, 999);
+    return date.getTime();
+  });
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [pickerField, setPickerField] = useState<'start' | 'end' | null>(null);
+  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+
+  useEffect(() => {
+    if (!customRange) return;
+    setStartMs(customRange.start);
+    setEndMs(customRange.end);
+    setRangeError(null);
+  }, [customRange]);
 
   useFocusEffect(
     useCallback(() => {
+      if (range === 'custom' && !customRange) return;
       void load(range);
       const id = setInterval(() => {
-        void load(range);
+        if (range !== 'custom' || customRange) {
+          void load(range);
+        }
       }, 60_000);
       return () => clearInterval(id);
-    }, [load, range]),
+    }, [load, range, customRange]),
   );
+
+  const openPicker = (field: 'start' | 'end', mode: 'date' | 'time') => {
+    setPickerField(field);
+    setPickerMode(mode);
+  };
+
+  const handlePickerChange = (
+    event: DateTimePickerEvent,
+    selected?: Date,
+  ) => {
+    const field = pickerField;
+    const mode = pickerMode;
+    setPickerField(null);
+    if (!field || event.type === 'dismissed' || !selected) return;
+
+    const current = new Date(field === 'start' ? startMs : endMs);
+    if (mode === 'date') {
+      current.setFullYear(
+        selected.getFullYear(),
+        selected.getMonth(),
+        selected.getDate(),
+      );
+    } else {
+      current.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+    }
+
+    if (field === 'start') {
+      setStartMs(current.getTime());
+    } else {
+      setEndMs(current.getTime());
+    }
+    setRangeError(null);
+  };
+
+  const handleApplyRange = async () => {
+    const validation = validateCustomRange(startMs, endMs);
+    if (validation) {
+      setRangeError(validation);
+      return;
+    }
+    setRangeError(null);
+    setApplying(true);
+    try {
+      await applyCustomRange({ start: startMs, end: endMs });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const rangeLabel =
+    range === 'custom'
+      ? customRange
+        ? formatDateTimeRange(customRange)
+        : 'Rango personalizado'
+      : INFLUX_RANGES[range].label;
+  const customDuration = customRange
+    ? customRange.end - customRange.start
+    : 0;
+  const useDateAxis =
+    range === '7d' ||
+    (range === 'custom' && customDuration > 2 * DAY_MS);
 
   const temps = valuesOf(points, 'temperatureC');
   const winds = valuesOf(points, 'windMaxKmh');
@@ -71,7 +234,7 @@ export default function HistoryScreen() {
   const maxWind = winds.length > 0 ? Math.max(...winds) : null;
   const rainTotal = rains.reduce((sum, value) => sum + value, 0);
 
-  const formatX = range === '7d' ? formatShortDate : formatShortTime;
+  const formatX = useDateAxis ? formatShortDate : formatShortTime;
   const unitLabel = temperatureUnit(units);
 
   const temperatureData = points.map((point) => ({
@@ -88,7 +251,11 @@ export default function HistoryScreen() {
     <Screen refreshing={loading} onRefresh={() => void load(range)}>
       <View style={styles.header}>
         <AppText variant="title">Histórico</AppText>
-        <AppText variant="caption">Datos guardados en el dispositivo</AppText>
+        <AppText variant="caption">
+          {activeSource === 'influx'
+            ? 'Serie histórica desde InfluxDB'
+            : 'Datos guardados en el dispositivo'}
+        </AppText>
       </View>
 
       <SegmentedControl
@@ -98,8 +265,52 @@ export default function HistoryScreen() {
       />
 
       <AppText variant="caption" style={{ marginTop: 6 }}>
-        {HISTORY_RANGES[range].label} · guardado local
+        {rangeLabel} ·{' '}
+        {activeSource === 'influx' ? 'InfluxDB' : 'guardado local'}
       </AppText>
+
+      {range === 'custom' ? (
+        <Card style={styles.rangeCard}>
+          <RangePickerRow
+            label="Desde"
+            value={startMs}
+            onPickDate={() => openPicker('start', 'date')}
+            onPickTime={() => openPicker('start', 'time')}
+          />
+          <RangePickerRow
+            label="Hasta"
+            value={endMs}
+            onPickDate={() => openPicker('end', 'date')}
+            onPickTime={() => openPicker('end', 'time')}
+          />
+          {rangeError ? (
+            <AppText variant="caption" color={colors.danger}>
+              {rangeError}
+            </AppText>
+          ) : null}
+          <Button
+            title="Aplicar rango"
+            icon="calendar-outline"
+            onPress={() => void handleApplyRange()}
+            loading={applying}
+            style={{ marginTop: spacing.sm }}
+          />
+          <AppText variant="caption" style={{ marginTop: spacing.sm }}>
+            Formato DD-MM-AAAA. Pulsa la fecha para abrir el calendario o la
+            hora para cambiarla.
+          </AppText>
+        </Card>
+      ) : null}
+
+      {pickerField ? (
+        <DateTimePicker
+          value={new Date(pickerField === 'start' ? startMs : endMs)}
+          mode={pickerMode}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          is24Hour
+          onChange={handlePickerChange}
+        />
+      ) : null}
 
       {error ? (
         <Card style={[styles.error, { borderColor: colors.danger }]}>
@@ -188,7 +399,10 @@ export default function HistoryScreen() {
             />
           </Card>
 
-          <SectionHeader title="Lluvia" subtitle="Acumulada por intervalo" />
+          <SectionHeader
+            title="Lluvia"
+            subtitle={`Acumulada por intervalo · ${rainUnit(units)}`}
+          />
           <Card style={styles.chartCard}>
             {rainTotal > 0 ? (
               <BarChart
@@ -205,8 +419,7 @@ export default function HistoryScreen() {
           </Card>
 
           <AppText variant="caption" align="center" style={{ marginTop: spacing.lg }}>
-            {formatNumber(points.length, 0)} puntos ·{' '}
-            {HISTORY_RANGES[range].label}
+            {formatNumber(points.length, 0)} puntos · {rangeLabel}
           </AppText>
         </>
       )}
@@ -235,5 +448,29 @@ const styles = StyleSheet.create({
   },
   chartCard: {
     padding: spacing.sm,
+  },
+  rangeCard: {
+    marginTop: spacing.md,
+  },
+  rangeField: {
+    marginBottom: spacing.md,
+  },
+  rangeControls: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  pickerButton: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  timeButton: {
+    flex: 0,
+    width: 112,
   },
 });

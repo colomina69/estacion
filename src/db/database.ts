@@ -193,10 +193,17 @@ export async function getReadingsSince(since: number): Promise<Reading[]> {
 }
 
 export async function getHistorySeries(range: HistoryRange): Promise<HistoryPoint[]> {
-  const db = await initDatabase();
   const { durationMs, bucketMs } = HISTORY_RANGES[range];
-  const since = Date.now() - durationMs;
+  const now = Date.now();
+  return getHistorySeriesBetween(now - durationMs, now, bucketMs);
+}
 
+export async function getHistorySeriesBetween(
+  startMs: number,
+  endMs: number,
+  bucketMs: number,
+): Promise<HistoryPoint[]> {
+  const db = await initDatabase();
   const rows = await db.getAllAsync<HistoryRow>(
     `SELECT
        (received_at / ?) * ? AS bucket,
@@ -209,12 +216,13 @@ export async function getHistorySeries(range: HistoryRange): Promise<HistoryPoin
        AVG(uvi) AS uvi,
        AVG(light_lux) AS light_lux
      FROM readings
-     WHERE received_at >= ?
+     WHERE received_at >= ? AND received_at <= ?
      GROUP BY bucket
      ORDER BY bucket ASC`,
     bucketMs,
     bucketMs,
-    since,
+    startMs,
+    endMs,
   );
 
   return rows.map((row) => ({
