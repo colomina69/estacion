@@ -226,13 +226,46 @@ export default function HistoryScreen() {
     range === '7d' ||
     (range === 'custom' && customDuration > 2 * DAY_MS);
 
-  const temps = valuesOf(points, 'temperatureC');
-  const winds = valuesOf(points, 'windMaxKmh');
   const rains = valuesOf(points, 'rainDeltaMm');
-  const maxTemp = temps.length > 0 ? Math.max(...temps) : null;
-  const minTemp = temps.length > 0 ? Math.min(...temps) : null;
-  const maxWind = winds.length > 0 ? Math.max(...winds) : null;
+  const maxTempPoint = points.reduce<HistoryPoint | null>((best, point) => {
+    if (point.temperatureC === null) return best;
+    if (!best || point.temperatureC > (best.temperatureC ?? -Infinity)) {
+      return point;
+    }
+    return best;
+  }, null);
+  const minTempPoint = points.reduce<HistoryPoint | null>((best, point) => {
+    if (point.temperatureC === null) return best;
+    if (!best || point.temperatureC < (best.temperatureC ?? Infinity)) {
+      return point;
+    }
+    return best;
+  }, null);
+  const maxWindPoint = points.reduce<HistoryPoint | null>((best, point) => {
+    if (point.windMaxKmh === null) return best;
+    if (!best || point.windMaxKmh > (best.windMaxKmh ?? -Infinity)) {
+      return point;
+    }
+    return best;
+  }, null);
+  const maxTemp = maxTempPoint?.temperatureC ?? null;
+  const minTemp = minTempPoint?.temperatureC ?? null;
+  const maxWind = maxWindPoint?.windMaxKmh ?? null;
   const rainTotal = rains.reduce((sum, value) => sum + value, 0);
+  const rainStartPoint =
+    points.find((point) => (point.rainDeltaMm ?? 0) > 0) ??
+    (rainTotal > 0
+      ? points.find((point) => (point.rainMm ?? 0) > 0) ?? null
+      : null);
+
+  const showDateForEvent =
+    range === '7d' || (range === 'custom' && customDuration > DAY_MS);
+  const formatEventMoment = (timestamp: number | null | undefined): string => {
+    if (timestamp === null || timestamp === undefined) return '—';
+    return showDateForEvent
+      ? `${formatShortDate(timestamp)} · ${formatShortTime(timestamp)}`
+      : `a las ${formatShortTime(timestamp)}`;
+  };
 
   const formatX = useDateAxis ? formatShortDate : formatShortTime;
   const unitLabel = temperatureUnit(units);
@@ -343,11 +376,17 @@ export default function HistoryScreen() {
               <AppText variant="heading" style={{ marginTop: 2 }}>
                 {formatTemperature(maxTemp, units, 0)}
               </AppText>
+              <AppText variant="caption" numberOfLines={1}>
+                {formatEventMoment(maxTempPoint?.t)}
+              </AppText>
             </Card>
             <Card style={styles.statCard}>
               <AppText variant="label">Temp. mín.</AppText>
               <AppText variant="heading" style={{ marginTop: 2 }}>
                 {formatTemperature(minTemp, units, 0)}
+              </AppText>
+              <AppText variant="caption" numberOfLines={1}>
+                {formatEventMoment(minTempPoint?.t)}
               </AppText>
             </Card>
           </View>
@@ -357,11 +396,19 @@ export default function HistoryScreen() {
               <AppText variant="heading" style={{ marginTop: 2 }}>
                 {formatWind(maxWind, units, 0)}
               </AppText>
+              <AppText variant="caption" numberOfLines={1}>
+                {formatEventMoment(maxWindPoint?.t)}
+              </AppText>
             </Card>
             <Card style={styles.statCard}>
               <AppText variant="label">Lluvia</AppText>
               <AppText variant="heading" style={{ marginTop: 2 }}>
                 {formatRain(rainTotal, units)}
+              </AppText>
+              <AppText variant="caption" numberOfLines={1}>
+                {rainStartPoint
+                  ? `Inicio: ${formatEventMoment(rainStartPoint.t)}`
+                  : 'Sin lluvia en el periodo'}
               </AppText>
             </Card>
           </View>

@@ -125,7 +125,7 @@ El propietario de la estación recibe datos técnicos en bruto (JSON de `rtl_433
 |---|---|---|
 | RF-19 | Cargar el histórico desde InfluxDB 2.x mediante consultas Flux, con opción de usar la caché local | Must |
 | RF-20 | Mantener una caché local de lecturas para vivo, alertas y lluvia, con retención de 30 días | Must |
-| RF-21 | Gráficas de temperatura/humedad, viento y lluvia para 1 h, 24 h, 7 d y un rango personalizado entre dos fechas y horas, elegido con calendario y reloj | Should |
+| RF-21 | Gráficas de temperatura/humedad, viento y lluvia para 1 h, 24 h, 7 d y un rango personalizado entre dos fechas y horas, elegido con calendario y reloj; máximos y mínimos muestran su hora (o día y hora) y la lluvia su inicio | Should |
 | RF-22 | Agregación Flux: 1 min (1 h), 5 min (24 h), 30 min (7 días) y ventana adaptativa (máx. 500 puntos) para fechas personalizadas | Should |
 | RF-23 | El histórico de InfluxDB persiste independientemente de la app; la caché local sobrevive reinicios | Must |
 
@@ -458,6 +458,7 @@ CREATE TABLE IF NOT EXISTS alert_events (
 
 - Selector segmentado: `1 h | 24 h | 7 d | Fechas`.
 - Rango personalizado: botones de fecha y hora para «Desde» y «Hasta», calendario y reloj nativos, formato `DD-MM-AAAA HH:mm`, botón «Aplicar rango» y validación.
+- Estadísticas de temperatura máxima/mínima y viento máximo con la hora en que ocurrieron; en rangos de varios días se muestra día + hora. La lluvia muestra el inicio del periodo de precipitación.
 - Gráfica de línea: temperatura y humedad.
 - Gráfica de línea/área: viento medio y máximo.
 - Barras: lluvia por intervalo.

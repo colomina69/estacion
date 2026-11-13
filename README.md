@@ -12,6 +12,7 @@ Dashboard en vivo, **histórico desde InfluxDB** con gráficas y alertas por umb
 - La lluvia se muestra siempre en **litros (L)** y la intensidad en **L/h**, independientemente del sistema de unidades (equivalencia: 1 mm = 1 L/m²).
 - Estado de conexión, última actualización y aviso de dato obsoleto.
 - Histórico desde InfluxDB 2.7 con consultas Flux agregadas y gráficas de 1 h, 24 h, 7 días o un rango personalizado entre dos fechas y horas.
+- Temperatura máxima y mínima y viento máximo muestran cuándo ocurrieron; la lluvia muestra su inicio. Hora en rangos de horas y día + hora en rangos de varios días.
 - Caché local en SQLite para vivo, alertas y estadísticas de lluvia.
 - Alertas locales configurables: viento, lluvia, temperatura, UV, batería y pérdida de datos.
 - Ajustes de broker, credenciales, unidades, tema y retención.
